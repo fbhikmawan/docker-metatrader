@@ -1,0 +1,14 @@
+version: '3'
+services:
+  mt:
+    image: 'tickelton/mt:latest'
+    container_name: mt5
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile.mt5-64bit
+    network_mode: host
+    volumes:
+      - './volume/tmp/.X11-unix:/tmp/.X11-unix'
+      - './volume/mt5:/MetaTrader'
+    environment:
+      - DISPLAY
