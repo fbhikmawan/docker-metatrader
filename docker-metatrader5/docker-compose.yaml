@@ -6,10 +6,11 @@ services:
     build:
       context: .
       dockerfile: .docker/Dockerfile.mt5-64bit
-    network_mode: host
     volumes:
       - './volume/tmp/.X11-unix:/tmp/.X11-unix'
       - './volume/mt5:/MetaTrader'
     environment:
-      - DISPLAY=host.docker.internal:0.0
+      - DISPLAY
       - WINEPREFIX=/home/wine
+    ports:
+      - '2222:22'

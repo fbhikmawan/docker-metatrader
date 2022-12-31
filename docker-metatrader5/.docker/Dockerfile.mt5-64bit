@@ -20,9 +20,14 @@ ADD https://dl.winehq.org/wine-builds/winehq.key /winehq.key
 # Disable interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Update Environtment
+RUN apt-get update && apt-get install -y apt-utils
+
+# Install Sudo
+RUN apt-get update && apt-get -y install sudo
+
 # Install Wine
-RUN apt-get update && \
-	apt-get install -y gnupg apt-utils && \
+RUN apt-get update && apt-get install -y gnupg && \
 	echo "deb http://dl.winehq.org/wine-builds/ubuntu/ focal main" >> /etc/apt/sources.list && \
 	apt-key add /winehq.key && \
 	mv /winehq.key /usr/share/keyrings/winehq-archive.key && \
@@ -31,17 +36,42 @@ RUN apt-get update && \
 	apt-get install -y -q --install-recommends winehq-devel && \
 	rm -rf /var/lib/apt/lists/* /winehq.key
 
-# Add wine user.
-# NOTE: You might need to change the UID/GID so the
-# wine user has write access to your MetaTrader
-# directory at $METATRADER_HOST_PATH.
-RUN groupadd -g 1000 wine \
-	&& useradd -g wine -u 1000 wine \
-	&& mkdir -p /home/wine/.wine && chown -R wine:wine /home/wine
+# Install OpenSSH Server
+RUN apt-get update && apt-get install -y openssh-server xauth \
+	&& sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+# Add wine user. Configure environtment for the user
+# RUN useradd -mU -u 1000 wine && echo "wine:wine" | chpasswd && gpasswd -a wine sudo \
+# 	&& mkdir /home/wine/.ssh && chown -R wine:wine /home/wine/.ssh && chmod 700 /home/wine/.ssh
+RUN \
+    groupadd -g 1000 wine && useradd -u 1000 -g wine -G sudo -m -s /bin/bash wine && \
+    sed -i /etc/sudoers -re 's/^%sudo.*/%sudo ALL=(ALL:ALL) NOPASSWD: ALL/g' && \
+    sed -i /etc/sudoers -re 's/^root.*/root ALL=(ALL:ALL) NOPASSWD: ALL/g' && \
+    sed -i /etc/sudoers -re 's/^#includedir.*/## **Removed the include directive** ##"/g' && \
+    echo "wine ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    echo "Customized the sudoers file for passwordless access to the wine user!" && \
+    echo "wine user:";  su - wine -c id \
+	&& mkdir /home/wine/.ssh && chown -R wine:wine /home/wine/.ssh && chmod 700 /home/wine/.ssh
+
+# Configure SSH and X11
+RUN mkdir /var/run/sshd \
+    && ssh-keygen -A \
+    && sed -i "s/^.*PasswordAuthentication.*$/PasswordAuthentication no/" /etc/ssh/sshd_config \
+    && sed -i "s/^.*X11Forwarding.*$/X11Forwarding yes/" /etc/ssh/sshd_config \
+    && sed -i "s/^.*X11UseLocalhost.*$/X11UseLocalhost no/" /etc/ssh/sshd_config \
+    && grep "^X11UseLocalhost" /etc/ssh/sshd_config || echo "X11UseLocalhost no" >> /etc/ssh/sshd_config
+
+RUN echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCUIe3WHUwQD+t7VL8sjUTIavGzc3q0bM4CD6b5WRUv1WMrDWH+DO9dDcy6JormrIJAkUgNYcDIlVV9j8jO3LgsVhLb1gOg1Zd/8eEcB9e+v0x/CeFqcCTzfOyxAGMqZ9Rhxbqc3xRsPkDo6Hbu0du8OsqOXzzlidkmWzOuHfD9kvEm4yO9WMUIIa7W0zQU4oRr6OVDBmylHltuhwKEMfcl2alSocrOJXhfz7SzDXxalHmvKMfuBWATQNZUSwDLbodPHvH8kG4mpYzeC4Ryl3WLeF5y4gOURK5T1evxA8VYPKHPTd/DkOhVqZAktS2QYlkLAMlWFsliF5uW6hHJXXEuCiPDFyQAQQGxoerJWlfoaRCSdeo3amjJwwMU3ypVem4jInxYyvkfOD6pUT1x3EXakT/hKZzgBpRvJc7dulnumamXurB2NK3aMnnyf1DdCOdUQoeiTzJvw6Vjky3lpNcj0jnyaWV8GRH0uvvHwULsNs6NaS9vgtjR6qPXuJz+da0= f b hikmawan@HP-ELITEBOOK2570P-HUB" >> /home/wine/.ssh/authorized_keys
 
 # Run MetaTrader as non privileged user.
 USER wine
 
+# Exposing ports
+EXPOSE 22 2222
+
 # Autorun MetaTrader Terminal.
-ENTRYPOINT [ "wine" ]
-CMD [ "/MetaTrader/terminal64.exe", "/portable" ]
+# ENTRYPOINT [ "wine" ]
+# CMD [ "/MetaTrader/terminal64.exe", "/portable" ]
+
+# Custom Entrypoint
+ENTRYPOINT sudo service ssh start && tail -f /dev/null
